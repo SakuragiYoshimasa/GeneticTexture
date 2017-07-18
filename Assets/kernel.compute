@@ -1,0 +1,60 @@
+﻿#pragma kernel Kernel
+#pragma kernel init
+
+RWStructuredBuffer<float4> PrevGeneBuffer;
+RWStructuredBuffer<float4> CurrGeneBuffer;
+float _Time;
+uint _TexSize;
+
+#include "Noise/SimplexNoiseGrad3D.cginc"
+
+float mod(float a, float b){
+	return a - float(int(a / b)) * b;
+}
+
+float rand(float2 texCoord, int Seed){
+    return frac(sin(dot(texCoord.xy, float2(12.9898, 78.233)) + Seed) * 43758.5453);
+}
+
+
+[numthreads(8,1,1)]
+void init (uint id : SV_DispatchThreadID){
+
+	float r = rand(float2(_Time * float(id) * 0.34, float(id)), id);
+	CurrGeneBuffer[id] = float4(snoise_grad(float3(r, r * 2, r + float(id))), rand(float2(r, r), id));
+	PrevGeneBuffer[id] = float4(snoise_grad(float3(r * 3.0, -0.23 * r, r + float(id) * 0.03)), rand(float2(r * 0.3, r), id));
+}
+
+[numthreads(8,1,1)]
+void Kernel (uint id : SV_DispatchThreadID){
+
+	int seed = id % 100;
+	float r = rand(float2(_Time, float(id) * _Time * 3.0), seed);
+	
+
+	if(r > 0.98){
+		//Mutation
+		r = (r - 0.98) / 0.02;
+		int target = int(4.0 * r);
+		CurrGeneBuffer[id][target] = (rand(float2(r, r * _Time), seed) - 0.5) * 20.0;
+	}else if(r > 0.70){
+		r = (r - 0.70) / 0.28;
+		int t = int(r * float(_TexSize));
+		CurrGeneBuffer[id].xz = PrevGeneBuffer[t].yw;
+		PrevGeneBuffer[t].yw = PrevGeneBuffer[id].xz;
+	}else if(r > 0.50){
+		r = (r - 0.50) / 0.20;
+		int t = int(r * float(_TexSize));
+		CurrGeneBuffer[id].yz = PrevGeneBuffer[t].xy;
+		PrevGeneBuffer[t].xy = PrevGeneBuffer[id].yz; 
+	}else if(r < 0.2){
+		r = (0.2 - r) / 0.2;
+		int target = int(4.0 * r);
+		int t = int(rand(float2(r, r * _Time), seed) * _TexSize);
+		CurrGeneBuffer[id][target] = PrevGeneBuffer[t][target];
+	}else{
+		CurrGeneBuffer[id] = PrevGeneBuffer[id];
+	}
+}
+
+
